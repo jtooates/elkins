@@ -8,7 +8,7 @@ A local-first Electron + React + TypeScript + SQLite prototype for testing the a
 - **System tray behavior.** Closing the window hides it; the Electron main process remains alive.
 - **Native notifications.** Use the test button or the simple background help rule.
 - **Background checks.** In prototype mode the main process evaluates the help rule every 60 seconds.
-- **Synthetic Blackboard connector.** No UMBC or Blackboard account is contacted.
+- **Synthetic Blackboard connector.** No UMBC or Blackboard account yet.
 - **API-shaped Blackboard fixtures.** The mock dump represents memberships, courses, content, gradebook columns, announcements, and calendar items.
 - **Normalization.** Blackboard-specific records become common `Course`, `Assignment`, and `Announcement` records in SQLite.
 - **Raw + normalized storage.** Raw source records are retained locally for provenance/debugging; the UI uses normalized tables.
