@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Electron / TypeScript build output run npm run dist:win
+release/
+dist/
+out/
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+#idk
+.DS_Store
+Thumbs.db
+.vscode/
