@@ -1,0 +1,399 @@
+{
+  "generatedAt": "2026-10-05T16:30:00-04:00",
+  "description": "Synthetic Blackboard Learn REST responses for development only. Endpoint shapes and common field names are modeled after Blackboard developer documentation; values and UMBC course data are fictional.",
+  "responses": [
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/users/me/courses",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_90001_1",
+            "userId": "_10001_1",
+            "courseId": "_421_1",
+            "created": "2026-08-24T13:12:22.000Z",
+            "courseRoleId": "Student",
+            "availability": { "available": "Yes" }
+          },
+          {
+            "id": "_90002_1",
+            "userId": "_10001_1",
+            "courseId": "_447_1",
+            "created": "2026-08-24T13:13:09.000Z",
+            "courseRoleId": "Student",
+            "availability": { "available": "Yes" }
+          },
+          {
+            "id": "_90003_1",
+            "userId": "_10001_1",
+            "courseId": "_355_1",
+            "created": "2026-08-24T13:14:41.000Z",
+            "courseRoleId": "Student",
+            "availability": { "available": "Yes" }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/courses/_421_1",
+      "status": 200,
+      "body": {
+        "id": "_421_1",
+        "externalId": "FA26-CMSC-421-01",
+        "dataSourceId": "_2_1",
+        "courseId": "CMSC421-01",
+        "name": "CMSC 421 - Operating Systems",
+        "description": "Operating-system concepts with programming projects involving processes, memory, and system interfaces.",
+        "created": "2026-05-18T14:11:09.000Z",
+        "organization": false,
+        "ultraStatus": "Ultra",
+        "allowGuests": false,
+        "readOnly": false,
+        "term": { "id": "_FA26_1", "name": "Fall 2026" },
+        "availability": { "available": "Yes", "duration": "Continuous" }
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/courses/_447_1",
+      "status": 200,
+      "body": {
+        "id": "_447_1",
+        "externalId": "FA26-CMSC-447-01",
+        "dataSourceId": "_2_1",
+        "courseId": "CMSC447-01",
+        "name": "CMSC 447 - Software Engineering I",
+        "description": "Team-based software engineering with requirements, modeling, sprint planning, implementation, and stakeholder review.",
+        "created": "2026-05-18T14:13:09.000Z",
+        "organization": false,
+        "ultraStatus": "Ultra",
+        "allowGuests": false,
+        "readOnly": false,
+        "term": { "id": "_FA26_1", "name": "Fall 2026" },
+        "availability": { "available": "Yes", "duration": "Continuous" }
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/courses/_355_1",
+      "status": 200,
+      "body": {
+        "id": "_355_1",
+        "externalId": "FA26-STAT-355-02",
+        "dataSourceId": "_2_1",
+        "courseId": "STAT355-02",
+        "name": "STAT 355 - Introduction to Probability and Statistics",
+        "description": "Probability models, random variables, expectation, common distributions, and statistical inference.",
+        "created": "2026-05-19T09:03:14.000Z",
+        "organization": false,
+        "ultraStatus": "Ultra",
+        "allowGuests": false,
+        "readOnly": false,
+        "term": { "id": "_FA26_1", "name": "Fall 2026" },
+        "availability": { "available": "Yes", "duration": "Continuous" }
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/courses/_421_1/contents",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_421C100_1",
+            "title": "Project 1 - Shell",
+            "body": "Implement a small Unix-style shell. Complete command parsing, child-process execution, built-ins, persistent history, and testing.",
+            "description": "Shell programming project",
+            "created": "2026-09-15T15:04:21.000Z",
+            "modified": "2026-10-02T18:31:12.000Z",
+            "position": 3,
+            "hasChildren": false,
+            "availability": { "available": "Yes" },
+            "contentHandler": { "id": "resource/x-bb-assignment" }
+          },
+          {
+            "id": "_421C110_1",
+            "title": "Exam 1 Review",
+            "body": "Review process creation, address spaces, scheduling, and synchronization material.",
+            "description": "Review materials",
+            "created": "2026-09-29T13:11:00.000Z",
+            "modified": "2026-10-04T16:22:10.000Z",
+            "position": 4,
+            "hasChildren": false,
+            "availability": { "available": "Yes" },
+            "contentHandler": { "id": "resource/x-bb-document" }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v2/courses/_421_1/gradebook/columns",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_421G100_1",
+            "name": "Project 1 - Shell",
+            "description": "Programming project",
+            "created": "2026-09-15T15:04:25.000Z",
+            "contentId": "_421C100_1",
+            "score": { "possible": 100.0 },
+            "availability": { "available": "Yes" },
+            "grading": {
+              "type": "Attempts",
+              "due": "2026-10-08T03:59:00.000Z",
+              "attemptsAllowed": 1
+            }
+          },
+          {
+            "id": "_421G120_1",
+            "name": "Exam 1",
+            "description": "First midterm exam",
+            "created": "2026-09-29T13:12:00.000Z",
+            "score": { "possible": 100.0 },
+            "availability": { "available": "Yes" },
+            "grading": {
+              "type": "Manual",
+              "due": "2026-10-14T18:00:00.000Z",
+              "attemptsAllowed": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/courses/_421_1/announcements",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_421A10_1",
+            "title": "Project 1 clarification",
+            "body": "The shell must ignore blank input and support leading whitespace before built-in commands. Please use the updated rubric.",
+            "created": "2026-10-03T14:20:00.000Z",
+            "modified": "2026-10-03T15:01:00.000Z",
+            "availability": { "duration": "Permanent" }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/courses/_447_1/contents",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_447C200_1",
+            "title": "Sprint 2 Backlog and Planning",
+            "body": "Submit the updated sprint backlog with user stories, task estimates, and ownership. Include the inspection form, stormwater inventory, and role-access work.",
+            "description": "Sprint planning deliverable",
+            "created": "2026-10-01T12:00:00.000Z",
+            "modified": "2026-10-04T18:40:00.000Z",
+            "position": 5,
+            "hasChildren": false,
+            "availability": { "available": "Yes" },
+            "contentHandler": { "id": "resource/x-bb-assignment" }
+          },
+          {
+            "id": "_447C210_1",
+            "title": "Architecture Reflection",
+            "body": "Write a short reflection on how the implementation architecture supports the functional and nonfunctional requirements.",
+            "description": "Individual reflection",
+            "created": "2026-10-02T16:00:00.000Z",
+            "modified": "2026-10-02T16:00:00.000Z",
+            "position": 6,
+            "hasChildren": false,
+            "availability": { "available": "Yes" },
+            "contentHandler": { "id": "resource/x-bb-assignment" }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v2/courses/_447_1/gradebook/columns",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_447G200_1",
+            "name": "Sprint 2 Backlog and Planning",
+            "created": "2026-10-01T12:02:00.000Z",
+            "contentId": "_447C200_1",
+            "score": { "possible": 25.0 },
+            "availability": { "available": "Yes" },
+            "grading": {
+              "type": "Attempts",
+              "due": "2026-10-09T03:59:00.000Z",
+              "attemptsAllowed": 1
+            }
+          },
+          {
+            "id": "_447G210_1",
+            "name": "Architecture Reflection",
+            "created": "2026-10-02T16:02:00.000Z",
+            "contentId": "_447C210_1",
+            "score": { "possible": 10.0 },
+            "availability": { "available": "Yes" },
+            "grading": {
+              "type": "Attempts",
+              "due": "2026-10-13T03:59:00.000Z",
+              "attemptsAllowed": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/courses/_447_1/announcements",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_447A20_1",
+            "title": "Sprint 2 customer meeting",
+            "body": "The next customer review will focus on the inspection-form workflow and admin versus staff permissions.",
+            "created": "2026-10-04T15:10:00.000Z",
+            "modified": "2026-10-04T15:10:00.000Z",
+            "availability": { "duration": "Permanent" }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/courses/_355_1/contents",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_355C300_1",
+            "title": "Discussion 4",
+            "body": "Complete the assigned probability questions on expected value and geometric distributions. Show work for each part.",
+            "description": "Weekly discussion",
+            "created": "2026-09-30T14:00:00.000Z",
+            "modified": "2026-10-04T12:00:00.000Z",
+            "position": 4,
+            "hasChildren": false,
+            "availability": { "available": "Yes" },
+            "contentHandler": { "id": "resource/x-bb-assignment" }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v2/courses/_355_1/gradebook/columns",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_355G300_1",
+            "name": "Discussion 4",
+            "created": "2026-09-30T14:01:00.000Z",
+            "contentId": "_355C300_1",
+            "score": { "possible": 15.0 },
+            "availability": { "available": "Yes" },
+            "grading": {
+              "type": "Attempts",
+              "due": "2026-10-07T03:59:00.000Z",
+              "attemptsAllowed": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/courses/_355_1/announcements",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_355A30_1",
+            "title": "Discussion 4 coverage",
+            "body": "Discussion 4 covers the probability material through geometric random variables. Review the corresponding textbook sections before class.",
+            "created": "2026-10-04T19:45:00.000Z",
+            "modified": "2026-10-04T19:45:00.000Z",
+            "availability": { "duration": "Permanent" }
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "endpoint": "/learn/api/public/v1/calendars/items?type=GradebookColumn",
+      "status": 200,
+      "body": {
+        "results": [
+          {
+            "id": "_355G300_1",
+            "type": "GradebookColumn",
+            "calendarId": "_355_1",
+            "calendarName": "STAT 355 - Introduction to Probability and Statistics",
+            "title": "Discussion 4",
+            "start": "2026-10-07T03:59:00.000Z",
+            "end": "2026-10-07T03:59:00.000Z",
+            "modified": null,
+            "color": "#234D72",
+            "disableResizing": true,
+            "createdByUserId": null,
+            "dynamicCalendarItemProps": {
+              "attemptable": true,
+              "categoryId": "_355CAT1_1",
+              "dateRangeLimited": false,
+              "eventType": "Assignment",
+              "gradable": true
+            }
+          },
+          {
+            "id": "_421G100_1",
+            "type": "GradebookColumn",
+            "calendarId": "_421_1",
+            "calendarName": "CMSC 421 - Operating Systems",
+            "title": "Project 1 - Shell",
+            "start": "2026-10-08T03:59:00.000Z",
+            "end": "2026-10-08T03:59:00.000Z",
+            "modified": null,
+            "color": "#5B3F8C",
+            "disableResizing": true,
+            "createdByUserId": null,
+            "dynamicCalendarItemProps": {
+              "attemptable": true,
+              "categoryId": "_421CAT1_1",
+              "dateRangeLimited": false,
+              "eventType": "Assignment",
+              "gradable": true
+            }
+          },
+          {
+            "id": "_447G200_1",
+            "type": "GradebookColumn",
+            "calendarId": "_447_1",
+            "calendarName": "CMSC 447 - Software Engineering I",
+            "title": "Sprint 2 Backlog and Planning",
+            "start": "2026-10-09T03:59:00.000Z",
+            "end": "2026-10-09T03:59:00.000Z",
+            "modified": null,
+            "color": "#6E5B2D",
+            "disableResizing": true,
+            "createdByUserId": null,
+            "dynamicCalendarItemProps": {
+              "attemptable": true,
+              "categoryId": "_447CAT1_1",
+              "dateRangeLimited": false,
+              "eventType": "Assignment",
+              "gradable": true
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
