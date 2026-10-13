@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { canonicalCourseKey, canonicalItemId, comparableValue } from "./normalization";
 import {
   AppSettings,
   AppSnapshot,
@@ -9,7 +10,9 @@ import {
   EgressLogRecord,
   NotificationRecord,
   SourceDetail,
-  SourceRecord
+  SourceRecord,
+  ClaimInput, ChoiceUpdate, ContentClaim, CourseItemInput, CourseItemView,
+  FieldConflict, StudentChoice, ClaimField
 } from "../shared/types";
 
 export class AppDatabase {
@@ -115,6 +118,45 @@ export class AppDatabase {
         value TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS course_items (
+        id TEXT PRIMARY KEY,
+        course_key TEXT NOT NULL,
+        course_code TEXT NOT NULL,
+        course_title TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS content_claims (
+        id TEXT PRIMARY KEY,
+        item_id TEXT NOT NULL REFERENCES course_items(id) ON DELETE CASCADE,
+        source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+        field TEXT NOT NULL,
+        value TEXT NOT NULL,
+        locator TEXT NOT NULL,
+        evidence TEXT NOT NULL,
+        source_url TEXT,
+        observed_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_claim_item_field ON content_claims(item_id, field);
+
+      CREATE TABLE IF NOT EXISTS student_choices (
+        item_id TEXT NOT NULL REFERENCES course_items(id) ON DELETE CASCADE,
+        field TEXT NOT NULL,
+        selected_claim_id TEXT,
+        selected_value TEXT,
+        manual_value TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (item_id, field)
+      );
+
+      CREATE TABLE IF NOT EXISTS course_relationships (
+        from_item_id TEXT NOT NULL REFERENCES course_items(id) ON DELETE CASCADE,
+        relationship TEXT NOT NULL,
+        to_item_id TEXT NOT NULL REFERENCES course_items(id) ON DELETE CASCADE,
+        PRIMARY KEY (from_item_id, relationship, to_item_id)
+      );
+
       CREATE TABLE IF NOT EXISTS egress_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         purpose TEXT NOT NULL,
@@ -139,6 +181,14 @@ export class AppDatabase {
       "Local API-shaped JSON used to test the Blackboard connector without contacting UMBC."
     );
 
+    this.db.prepare(`
+      INSERT INTO sources (id, type, display_name, description, connected)
+      VALUES (?, ?, ?, ?, 0) ON CONFLICT(id) DO NOTHING
+    `).run(
+      "course-website", "website", "CMSC 678 website (public)",
+      "Student-authorized import from the public UMBC course schedule."
+    );
+
     const insertConsent = this.db.prepare(`
       INSERT INTO consents (source_id, scope, granted, updated_at)
       VALUES (?, ?, 0, ?)
@@ -146,6 +196,7 @@ export class AppDatabase {
     `);
     (["courses", "assignments", "announcements", "calendar"] as ConsentScope[]).forEach((scope) => {
       insertConsent.run("blackboard-mock", scope, now);
+      insertConsent.run("course-website", scope, now);
     });
 
     const defaults: AppSettings = {
@@ -209,6 +260,9 @@ export class AppDatabase {
 
   deleteSourceData(sourceId: string) {
     this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM content_claims WHERE source_id = ?`).run(sourceId);
+      this.db.prepare(`DELETE FROM course_items WHERE NOT EXISTS
+        (SELECT 1 FROM content_claims c WHERE c.item_id = course_items.id)`).run();
       this.db.prepare(`DELETE FROM announcements WHERE source_id = ?`).run(sourceId);
       this.db.prepare(`DELETE FROM assignments WHERE source_id = ?`).run(sourceId);
       this.db.prepare(`DELETE FROM courses WHERE source_id = ?`).run(sourceId);
@@ -320,6 +374,197 @@ export class AppDatabase {
     `).run(announcement);
   }
 
+  // Shared content store: raw Blackboard records remain intact.
+  upsertCourseItem(item: CourseItemInput) {
+    this.db.prepare(`
+      INSERT INTO course_items (id, course_key, course_code, course_title, kind, title)
+      VALUES (@id, @courseKey, @courseCode, @courseTitle, @kind, @title)
+      ON CONFLICT(id) DO UPDATE SET
+        course_title = excluded.course_title, course_code = excluded.course_code,
+        title = excluded.title
+    `).run(item);
+  }
+
+  upsertClaim(claim: ClaimInput) {
+    this.db.prepare(`
+      INSERT INTO content_claims
+        (id, item_id, source_id, field, value, locator, evidence, source_url, observed_at)
+      VALUES (@id, @itemId, @sourceId, @field, @value, @locator, @evidence, @sourceUrl, @observedAt)
+      ON CONFLICT(id) DO UPDATE SET
+        value = excluded.value, evidence = excluded.evidence,
+        source_url = excluded.source_url, observed_at = excluded.observed_at
+    `).run(claim);
+  }
+
+  linkCourseItems(fromItemId: string, relationship: string, toItemId: string) {
+    this.db.prepare(`
+      INSERT OR IGNORE INTO course_relationships (from_item_id, relationship, to_item_id)
+      VALUES (?, ?, ?)
+    `).run(fromItemId, relationship, toItemId);
+  }
+
+  // Every fetch/import is atomic. A malformed source cannot leave half-imported claims.
+  importContent(items: CourseItemInput[], claims: ClaimInput[],
+    relationships: Array<{ from: string; relationship: string; to: string }> = [],
+    replace?: { sourceId: string; courseKey: string; observedAt: string }) {
+    this.db.transaction(() => {
+      for (const item of items) this.upsertCourseItem(item);
+      for (const claim of claims) this.upsertClaim(claim);
+      if (replace) {
+        // Claims removed from a refreshed page are not treated as still current.
+        this.db.prepare(`DELETE FROM content_claims
+          WHERE source_id = ? AND observed_at <> ?
+          AND item_id IN (SELECT id FROM course_items WHERE course_key = ?)`)
+          .run(replace.sourceId, replace.observedAt, replace.courseKey);
+        this.db.prepare(`DELETE FROM course_items WHERE NOT EXISTS
+          (SELECT 1 FROM content_claims c WHERE c.item_id = course_items.id)`).run();
+      }
+      for (const relation of relationships) {
+        this.linkCourseItems(relation.from, relation.relationship, relation.to);
+      }
+    })();
+  }
+
+  private activeClaims(): ContentClaim[] {
+    const rows = this.db.prepare(`
+      SELECT cl.*, s.display_name AS source_label
+      FROM content_claims cl
+      JOIN course_items i ON i.id = cl.item_id
+      JOIN sources s ON s.id = cl.source_id
+      JOIN consents co ON co.source_id = s.id
+        AND co.scope = CASE WHEN i.kind = 'assignment' OR i.kind = 'assessment'
+          THEN 'assignments' WHEN i.kind = 'announcement' THEN 'announcements'
+          ELSE 'courses' END
+      WHERE s.connected = 1 AND co.granted = 1
+      ORDER BY cl.observed_at DESC, cl.id
+    `).all() as any[];
+    return rows.map(r => ({
+      id: r.id, itemId: r.item_id, sourceId: r.source_id,
+      sourceLabel: r.source_label, field: r.field, value: r.value,
+      locator: r.locator, evidence: r.evidence, sourceUrl: r.source_url,
+      observedAt: r.observed_at
+    }));
+  }
+
+  private getChoice(itemId: string, field: string): StudentChoice | null {
+    const row = this.db.prepare(`
+      SELECT * FROM student_choices WHERE item_id = ? AND field = ?
+    `).get(itemId, field) as any;
+    return row ? {
+      itemId: row.item_id, field: row.field, selectedClaimId: row.selected_claim_id,
+      selectedValue: row.selected_value, manualValue: row.manual_value,
+      updatedAt: row.updated_at
+    } : null;
+  }
+
+  private resolveField(itemId: string, field: ClaimField, claims: ContentClaim[]) {
+    const choice = this.getChoice(itemId, field);
+    const values = [...new Set(claims.map(c => comparableValue(field, c.value)))];
+    if (choice?.manualValue) {
+      return { value: choice.manualValue, status: "resolved" as const, choice };
+    }
+    if (choice?.selectedClaimId) {
+      const chosen = claims.find(c => c.id === choice.selectedClaimId);
+      if (!chosen || chosen.value !== choice.selectedValue) {
+        return { value: null, status: "changed" as const, choice };
+      }
+      return { value: chosen.value, status: "resolved" as const, choice };
+    }
+    if (values.length > 1) return { value: null, status: "unresolved" as const, choice };
+    return { value: claims[0]?.value ?? null, status: "resolved" as const, choice };
+  }
+
+  getConflicts(): FieldConflict[] {
+    const groups = new Map<string, ContentClaim[]>();
+    for (const claim of this.activeClaims()) {
+      const key = `${claim.itemId}\u0000${claim.field}`;
+      groups.set(key, [...(groups.get(key) ?? []), claim]);
+    }
+    const result: FieldConflict[] = [];
+    const lookup = this.db.prepare(`SELECT * FROM course_items WHERE id = ?`);
+    for (const [key, claims] of groups) {
+      const [itemId, field] = key.split("\u0000");
+      const distinct = new Set(claims.map(c => comparableValue(field as ClaimField, c.value)));
+      const decision = this.resolveField(itemId, field as ClaimField, claims);
+      if (distinct.size < 2 && decision.status !== "changed") continue;
+      const item = lookup.get(itemId) as any;
+      result.push({ itemId, courseCode: item.course_code, itemTitle: item.title,
+        field: field as ClaimField, claims, choice: decision.choice,
+        effectiveValue: decision.value, status: decision.status });
+    }
+    return result.sort((a, b) => (a.status === "resolved" ? 1 : 0) -
+      (b.status === "resolved" ? 1 : 0) || a.itemTitle.localeCompare(b.itemTitle));
+  }
+
+  getActiveContentItems(): CourseItemView[] {
+    const visibleClaims = this.activeClaims();
+    const byItem = new Map<string, ContentClaim[]>();
+    for (const c of visibleClaims) byItem.set(c.itemId, [...(byItem.get(c.itemId) ?? []), c]);
+    const statement = this.db.prepare(`SELECT * FROM course_items WHERE id = ?`);
+    const related = this.db.prepare(`
+      SELECT r.relationship, r.to_item_id, i.title FROM course_relationships r
+      JOIN course_items i ON i.id = r.to_item_id WHERE r.from_item_id = ?
+    `);
+    return Array.from(byItem, ([id, claims]) => {
+      const row = statement.get(id) as any;
+      const fields: Record<string, string | null> = {};
+      const unresolvedFields: ClaimField[] = [];
+      const fieldNames = [...new Set(claims.map(c => c.field))];
+      for (const field of fieldNames) {
+        const matching = claims.filter(c => c.field === field);
+        const decision = this.resolveField(id, field, matching);
+        fields[field] = decision.value;
+        if (decision.status !== "resolved") unresolvedFields.push(field);
+      }
+      return {
+        id, courseKey: row.course_key, courseCode: row.course_code,
+        courseTitle: row.course_title, kind: row.kind, title: row.title,
+        fields, claimCount: claims.length,
+        sourceLabels: [...new Set(claims.map(c => c.sourceLabel))],
+        unresolvedFields,
+        related: (related.all(id) as any[]).map(r => ({
+          relationship: r.relationship, itemId: r.to_item_id, title: r.title
+        }))
+      };
+    }).sort((a, b) => a.courseCode.localeCompare(b.courseCode) ||
+      a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title));
+  }
+
+  saveStudentChoice(update: ChoiceUpdate) {
+    if (!this.db.prepare(`SELECT 1 FROM course_items WHERE id = ?`).get(update.itemId)) {
+      throw new Error("Unknown course item");
+    }
+    const candidates = this.activeClaims().filter(c =>
+      c.itemId === update.itemId && c.field === update.field);
+    if (!candidates.length) throw new Error("No authorized claims for that field");
+    const manual = update.manualValue?.trim() || null;
+    const selected = update.selectedClaimId || null;
+    if (manual && selected) throw new Error("Choose a source OR enter a correction");
+    if (!manual && !selected) {
+      this.db.prepare(`DELETE FROM student_choices WHERE item_id = ? AND field = ?`)
+        .run(update.itemId, update.field);
+      return;
+    }
+    if (manual && update.field === "due_at" &&
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/.test(manual)) {
+      throw new Error("Use an ISO date/time with timezone, such as 2026-12-02T23:59:00-05:00");
+    }
+    if (manual && manual.length > 2000) throw new Error("Correction is too long");
+    const choice = selected ? candidates.find(c => c.id === selected) : undefined;
+    if (selected && !choice) throw new Error("Selected evidence is unavailable or not authorized");
+    this.db.prepare(`
+      INSERT INTO student_choices
+        (item_id, field, selected_claim_id, selected_value, manual_value, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(item_id, field) DO UPDATE SET
+        selected_claim_id = excluded.selected_claim_id,
+        selected_value = excluded.selected_value,
+        manual_value = excluded.manual_value,
+        updated_at = excluded.updated_at
+    `).run(update.itemId, update.field, selected, choice?.value ?? null,
+      manual, new Date().toISOString());
+  }
+
   markSourceSynced(sourceId: string, iso: string) {
     this.db.prepare(`UPDATE sources SET last_synced_at = ? WHERE id = ?`).run(iso, sourceId);
   }
@@ -343,15 +588,44 @@ export class AppDatabase {
   }
 
   getActiveAssignments(): AssignmentRecord[] {
-    return (this.db.prepare(`
-      SELECT a.*, c.course_code, c.title AS course_title
+    const normalized = this.getActiveContentItems().filter(i => i.kind === "assignment");
+    const byKey = new Map(normalized.map(i => [i.id, i]));
+    const activeCourses = this.getActiveCourses();
+    const originals = (this.db.prepare(`
+      SELECT a.*, c.course_code, c.title AS course_title, c.term
       FROM assignments a
       JOIN courses c ON c.id = a.course_id
       JOIN sources s ON s.id = a.source_id
       JOIN consents p ON p.source_id = s.id AND p.scope = 'assignments'
       WHERE s.connected = 1 AND p.granted = 1
-      ORDER BY CASE WHEN a.due_at IS NULL THEN 1 ELSE 0 END, a.due_at ASC
     `).all() as any[]).map(this.mapAssignment);
+    const matched = new Set<string>();
+    const result = originals.map((a) => {
+      const course = activeCourses.find(c => c.courseCode === a.courseCode);
+      const key = canonicalItemId(canonicalCourseKey(a.courseCode, course?.term ?? null),
+        "assignment", a.title);
+      const item = byKey.get(key);
+      if (!item) return a; // Historical sync still appears before migration.
+      matched.add(key);
+      return { ...a, dueAt: item.fields.due_at ?? null,
+        hasUnresolvedConflict: item.unresolvedFields.includes("due_at"),
+        sourceLabels: item.sourceLabels };
+    });
+    for (const item of normalized) {
+      if (matched.has(item.id)) continue;
+      result.push({
+        id: item.id, sourceId: "course-website", courseId: item.courseKey,
+        courseCode: item.courseCode, courseTitle: item.courseTitle,
+        externalId: item.id, title: item.title,
+        description: item.fields.description ?? null,
+        dueAt: item.fields.due_at ?? null,
+        possiblePoints: null, modifiedAt: null, status: "open",
+        hasUnresolvedConflict: item.unresolvedFields.includes("due_at"),
+        sourceLabels: item.sourceLabels
+      });
+    }
+    return result.sort((a, b) => (!a.dueAt ? 1 : !b.dueAt ? -1 :
+      a.dueAt.localeCompare(b.dueAt)));
   }
 
   getActiveAnnouncements() {
@@ -387,7 +661,26 @@ export class AppDatabase {
       JOIN consents p ON p.source_id = s.id AND p.scope = 'assignments'
       WHERE a.id = ? AND s.connected = 1 AND p.granted = 1
     `).get(assignmentId) as any;
-    if (!row) throw new Error("Assignment source not found");
+    if (!row) {
+      // Website assignments are stored in course_items instead of the
+      // original Blackboard-only assignments table.
+      const item = this.getActiveContentItems().find(i =>
+        i.id === assignmentId && i.kind === "assignment");
+      if (!item) throw new Error("Assignment source not found or not authorized");
+
+      // All visible claims preserve their source, location, and evidence.
+      const claims = this.activeClaims().filter(c => c.itemId === item.id);
+      const assignment = this.getActiveAssignments().find(a => a.id === assignmentId);
+      if (!assignment || !claims.length) throw new Error("No evidence is available");
+
+      return {
+        source: this.getSource("course-website"),
+        assignment,
+        endpoint: claims.find(c => c.sourceUrl)?.sourceUrl ?? "",
+        retrievedAt: claims[0].observedAt,
+        rawJson: claims
+      };
+    }
     return {
       source: this.getSource(row.s_id),
       assignment: this.mapAssignment(row),
@@ -504,7 +797,9 @@ export class AppDatabase {
       notifications: this.listNotifications(),
       egressLog: this.listEgressLog(),
       settings: this.getSettings(),
-      meta
+      meta,
+      contentItems: this.getActiveContentItems(),
+      conflicts: this.getConflicts()
     };
   }
 }

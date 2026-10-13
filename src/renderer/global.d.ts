@@ -1,6 +1,8 @@
 import type {
   AppSnapshot,
   ConsentUpdate,
+  ChoiceUpdate,
+  ImportResult,
   EgressSimulationResult,
   HelpCheckResult,
   SettingUpdate,
@@ -15,6 +17,8 @@ declare global {
       disconnectSource(sourceId: string): Promise<void>;
       deleteSourceData(sourceId: string): Promise<void>;
       syncMockBlackboard(): Promise<{ importedCourses: number; syncedAt: string }>;
+      importWebsite(mode: "fixture" | "live"): Promise<ImportResult>;
+      resolveConflict(choice: ChoiceUpdate): Promise<void>;
       getAssignmentSource(assignmentId: string): Promise<SourceDetail>;
       runHelpCheck(): Promise<HelpCheckResult>;
       sendTestNotification(): Promise<unknown>;

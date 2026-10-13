@@ -37,7 +37,7 @@ export class HelpEngine {
     }
 
     const candidates = this.db.getDueSoonAssignments(7)
-      .filter((a) => a.dueAt)
+      .filter((a) => a.dueAt && !a.hasUnresolvedConflict)
       .sort((a, b) => new Date(a.dueAt!).getTime() - new Date(b.dueAt!).getTime());
 
     for (const assignment of candidates) {
@@ -48,7 +48,7 @@ export class HelpEngine {
         kind: "deadline-risk",
         title: `${assignment.courseCode}: ${assignment.title}`,
         body: `Due in about ${days} day${days === 1 ? "" : "s"}. Pick one concrete first step you can start next.`,
-        reason: `Rule fired because this Blackboard assignment is due within 7 days and no deadline-risk nudge was sent in the last 12 hours.`,
+        reason: `Rule fired because this verified assignment is due within 7 days and no deadline-risk nudge was sent in the last 12 hours.`,
         assignmentId: assignment.id
       });
       return { created: true, message: "A deadline-risk nudge was created.", notification };

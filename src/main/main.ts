@@ -10,7 +10,8 @@ import {
 import { AppDatabase } from "./database";
 import { MockBlackboardConnector } from "./blackboard";
 import { HelpEngine } from "./helpEngine";
-import { ConsentUpdate, SettingUpdate } from "../shared/types";
+import { WebsiteCourseImporter } from "./siteImporter";
+import { ChoiceUpdate, ConsentUpdate, SettingUpdate } from "../shared/types";
 
 const BACKGROUND_CHECK_SECONDS = 60;
 
@@ -20,6 +21,7 @@ let isQuitting = false;
 let database: AppDatabase;
 let blackboard: MockBlackboardConnector;
 let helpEngine: HelpEngine;
+let website: WebsiteCourseImporter;
 let backgroundTimer: NodeJS.Timeout | null = null;
 
 // Prevent multiple copies of the app from running.
@@ -73,6 +75,13 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, "../../renderer/index.html"));
   }
+
+  // The renderer does not need browser privileges to navigate or request OS access.
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (event) => event.preventDefault());
+  mainWindow.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+    callback(false);
+  });
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("close", (event) => {
@@ -155,6 +164,24 @@ function registerIpc() {
     notifyRenderer();
   });
 
+  ipcMain.handle("website:import", async (_event, mode: "fixture" | "live") => {
+    if (mode !== "fixture" && mode !== "live") throw new Error("Invalid import mode");
+    const result = await website.import(mode);
+    notifyRenderer();
+    return result;
+  });
+
+  ipcMain.handle("conflicts:resolve", (_event, choice: ChoiceUpdate) => {
+    if (!choice || typeof choice.itemId !== "string" || typeof choice.field !== "string") {
+      throw new Error("Invalid correction request");
+    }
+    if (!(["due_at", "date", "url", "description", "issued_at"] as string[]).includes(choice.field)) {
+      throw new Error("Unsupported claim field");
+    }
+    database.saveStudentChoice(choice);
+    notifyRenderer();
+  });
+
   ipcMain.handle("blackboard:syncMock", () => {
     const result = blackboard.sync();
     notifyRenderer();
@@ -230,6 +257,8 @@ app.whenReady().then(() => {
   }
   blackboard = new MockBlackboardConnector(database, resourcePath("mock-blackboard", "mock-api-dump.json"));
   helpEngine = new HelpEngine(database, notifyRenderer, showWindow);
+  website = new WebsiteCourseImporter(database,
+    resourcePath("sample-courses", "cmsc678.html"));
 
   registerIpc();
   createWindow();

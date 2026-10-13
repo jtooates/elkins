@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import ConflictReview from "./components/ConflictReview";
 import type {
   AppSnapshot,
   ConsentScope,
   EgressSimulationResult,
-  SourceDetail
+  SourceDetail,
+  ContentClaim
 } from "../shared/types";
 
-type Page = "dashboard" | "assignments" | "sources" | "knowledge" | "notifications" | "privacy";
+type Page = "dashboard" | "assignments" | "content" | "conflicts" | "sources" | "knowledge" | "notifications" | "privacy";
 
 const scopeLabels: Record<ConsentScope, string> = {
   courses: "Course names and descriptions",
@@ -58,6 +60,8 @@ function App() {
   const nav: Array<[Page, string, string]> = [
     ["dashboard", "Dashboard", "⌂"],
     ["assignments", "Assignments", "✓"],
+    ["content", "Course content", "▤"],
+    ["conflicts", `Conflicts (${snapshot.conflicts.filter(c => c.status !== "resolved").length})`, "!"],
     ["sources", "Sources & consent", "◎"],
     ["knowledge", "What I know", "◇"],
     ["notifications", "Notification history", "◌"],
@@ -89,7 +93,14 @@ function App() {
 
       <main className="main">
         {page === "dashboard" && <Dashboard snapshot={snapshot} setPage={setPage} run={run} />}
-        {page === "assignments" && <Assignments snapshot={snapshot} onSource={async (id) => setSourceDetail(await window.studentAssistant.getAssignmentSource(id))} />}
+        {page === "assignments" && <Assignments snapshot={snapshot} onSource={async (id) => {
+          try { setSourceDetail(await window.studentAssistant.getAssignmentSource(id)); }
+          catch (error) {
+            setToast(error instanceof Error ? error.message : String(error));
+          }
+        }} onConflicts={() => setPage("conflicts")} />}
+        {page === "content" && <ContentLibrary snapshot={snapshot} setPage={setPage} />}
+        {page === "conflicts" && <ConflictReview conflicts={snapshot.conflicts} run={run} />}
         {page === "sources" && <Sources snapshot={snapshot} run={run} />}
         {page === "knowledge" && <Knowledge snapshot={snapshot} />}
         {page === "notifications" && <NotificationHistory snapshot={snapshot} run={run} />}
@@ -116,6 +127,7 @@ function PageHeader({ eyebrow, title, text, actions }: { eyebrow: string; title:
 
 function Dashboard({ snapshot, setPage, run }: any) {
   const upcoming = snapshot.assignments.slice(0, 4);
+  const unresolved = snapshot.conflicts.filter((c: any) => c.status !== "resolved").length;
   return <>
     <PageHeader eyebrow="Local-first prototype" title="Your semester at a glance" text="Everything on this screen is stored locally. The Blackboard data is synthetic for testing." actions={<>
       <button className="secondary" onClick={() => setPage("sources")}>Manage sources</button>
@@ -126,7 +138,7 @@ function Dashboard({ snapshot, setPage, run }: any) {
       <Stat label="Connected sources" value={snapshot.sources.filter((s: any) => s.connected).length} hint="Student-controlled" />
       <Stat label="Known courses" value={snapshot.courses.length} hint="Normalized locally" />
       <Stat label="Upcoming assignments" value={snapshot.assignments.filter((a: any) => a.dueAt).length} hint="From allowed sources" />
-      <Stat label="Nudges logged" value={snapshot.notifications.length} hint="Every reason is inspectable" />
+      <Stat label="Needs review" value={unresolved} hint="Contradictory source facts" />
     </section>
 
     <section className="two-col">
@@ -145,6 +157,10 @@ function Dashboard({ snapshot, setPage, run }: any) {
       </div>
     </section>
 
+    {unresolved > 0 && <section className="privacy-banner">
+      <div><strong>{unresolved} conflicting facts need attention</strong><p>The assistant avoids using uncertain deadlines until you review their sources.</p></div>
+      <button className="primary" onClick={() => setPage("conflicts")}>Review conflicts</button>
+    </section>}
     <section className="privacy-banner">
       <div><strong>Why does the assistant know this?</strong><p>Every imported item keeps provenance. Open an assignment and choose <em>View source</em> to inspect the original API-shaped Blackboard object.</p></div>
       <button className="secondary" onClick={() => setPage("knowledge")}>What I know</button>
@@ -156,7 +172,7 @@ function Stat({ label, value, hint }: any) {
   return <div className="stat"><span>{label}</span><strong>{value}</strong><small>{hint}</small></div>;
 }
 
-function Assignments({ snapshot, onSource }: any) {
+function Assignments({ snapshot, onSource, onConflicts }: any) {
   return <>
     <PageHeader eyebrow="Normalized data" title="Assignments" text="The UI uses one internal Assignment shape even though Blackboard represents course content, gradebook columns, and calendar items separately." />
     <div className="panel table-panel">
@@ -175,49 +191,96 @@ function Assignments({ snapshot, onSource }: any) {
 }
 
 function Sources({ snapshot, run }: any) {
-  const source = snapshot.sources[0];
-  const current = new Set(source.consents.filter((c: any) => c.granted).map((c: any) => c.scope));
-  const [selected, setSelected] = useState<Set<ConsentScope>>(new Set(current));
-  useEffect(() => setSelected(new Set(current)), [source.connected, source.consents.map((c: any) => `${c.scope}:${c.granted}`).join("|")]);
+  return <>
+    <PageHeader eyebrow="Permissions" title="Sources & consent"
+      text="Each source has independent permission controls. Public website imports are initiated explicitly and never execute website scripts." />
+    <div className="source-stack">
+      {snapshot.sources.map((source: any) => <SourceControls key={source.id}
+        source={source} run={run} />)}
+    </div>
+  </>;
+}
 
+function SourceControls({ source, run }: any) {
+  const current = source.consents.filter((c: any) => c.granted).map((c: any) => c.scope);
+  const [selected, setSelected] = useState<Set<ConsentScope>>(new Set(current));
+  useEffect(() => setSelected(new Set(current)), [source.connected,
+    source.consents.map((c: any) => `${c.scope}:${c.granted}`).join("|")]);
+  const isWebsite = source.id === "course-website";
+  const scopes = isWebsite ? ["courses", "assignments"] as ConsentScope[] :
+    Object.keys(scopeLabels) as ConsentScope[];
   const toggle = (scope: ConsentScope) => {
     const next = new Set(selected);
     next.has(scope) ? next.delete(scope) : next.add(scope);
     setSelected(next);
   };
+  return <div className="source-card">
+    <div className="source-top">
+      <div className="source-logo">{isWebsite ? "W" : "B"}</div>
+      <div><h2>{source.displayName}</h2><p>{source.description}</p></div>
+      <span className={source.connected ? "pill good" : "pill"}>{source.connected ? "Connected" : "Not connected"}</span>
+    </div>
+    <div className="consent-box"><h3>Allow this source to contribute</h3>
+      {scopes.map(scope => <label className="check-row" key={scope}>
+        <input type="checkbox" checked={selected.has(scope)} onChange={() => toggle(scope)} />
+        <span><strong>{scopeLabels[scope]}</strong><small>Used only in the local semester model.</small></span>
+      </label>)}
+    </div>
+    <div className="source-meta"><span><b>Last sync</b>{fmtDate(source.lastSyncedAt)}</span>
+      <span><b>Storage</b>Local SQLite</span><span><b>Input</b>{isWebsite ? "HTML only" : "Synthetic API JSON"}</span></div>
+    <div className="button-row">
+      <button className="primary" onClick={() => run(() =>
+        window.studentAssistant.updateConsent({ sourceId: source.id, connected: true,
+          scopes: [...selected] }), () => "Source permissions saved locally.")}>Save permissions / connect</button>
+      {isWebsite ? <>
+        <button className="secondary" disabled={!source.connected} onClick={() => run(
+          () => window.studentAssistant.importWebsite("fixture"), (r: any) =>
+            `Imported ${r.itemCount} sample course items; ${r.conflicts} conflicts.`)}>Import sample website</button>
+        <button className="secondary" disabled={!source.connected} onClick={() => run(
+          () => window.studentAssistant.importWebsite("live"), (r: any) =>
+            `Imported ${r.itemCount} live website items; ${r.conflicts} conflicts.`)}>Import live CMSC 678 website</button>
+      </> : <button className="secondary" disabled={!source.connected} onClick={() => run(
+          () => window.studentAssistant.syncMockBlackboard(), (r: any) =>
+            `Imported synthetic Blackboard data for ${r.importedCourses} courses.`)}>Sync mock Blackboard</button>}
+      {source.connected && <button className="danger-ghost" onClick={() => run(
+        () => window.studentAssistant.disconnectSource(source.id), () => "Source disconnected; claims are hidden.")}>Disconnect</button>}
+    </div>
+    {isWebsite && <p className="muted">The sample reproduces the published Homework 6 contradiction. The live option fetches one preapproved UMBC course URL; it does not crawl arbitrary pages.</p>}
+    <div className="delete-zone"><div><strong>Delete imported {isWebsite ? "website" : "Blackboard"} data</strong>
+      <p>Deletes this source's local records, without deleting claims from other sources.</p></div>
+      <button className="danger" onClick={() => run(() =>
+        window.studentAssistant.deleteSourceData(source.id), () => "Source data deleted.")}>Delete local data</button>
+    </div>
+  </div>;
+}
 
+function ContentLibrary({ snapshot, setPage }: any) {
+  const [kind, setKind] = useState("all");
+  const items = snapshot.contentItems.filter((item: any) => kind === "all" || item.kind === kind);
   return <>
-    <PageHeader eyebrow="Permissions" title="Sources & consent" text="Connections are explicit, granular, and revocable. This prototype never asks for a Blackboard password and does not contact Blackboard." />
-    <div className="source-card">
-      <div className="source-top">
-        <div className="source-logo">B</div>
-        <div><h2>Blackboard</h2><p>Synthetic REST-shaped data for prototype testing</p></div>
-        <span className={source.connected ? "pill good" : "pill"}>{source.connected ? "Connected" : "Not connected"}</span>
-      </div>
-      <div className="consent-box">
-        <h3>Allow this connector to read</h3>
-        {(Object.keys(scopeLabels) as ConsentScope[]).map((scope) => <label className="check-row" key={scope}>
-          <input type="checkbox" checked={selected.has(scope)} onChange={() => toggle(scope)} />
-          <span><strong>{scopeLabels[scope]}</strong><small>Used only to build the local semester model.</small></span>
-        </label>)}
-      </div>
-      <div className="source-meta">
-        <span><b>Last sync</b>{fmtDate(source.lastSyncedAt)}</span>
-        <span><b>Storage</b>Local SQLite only</span>
-        <span><b>Authentication</b>Mocked; future OAuth broker</span>
-      </div>
-      <div className="button-row">
-        <button className="primary" onClick={() => run(
-          () => window.studentAssistant.updateConsent({ sourceId: source.id, connected: true, scopes: [...selected] }),
-          () => "Blackboard permissions saved locally."
-        )}>{source.connected ? "Save permissions" : "Allow & connect"}</button>
-        <button className="secondary" disabled={!source.connected} onClick={() => run(() => window.studentAssistant.syncMockBlackboard(), (r: any) => `Imported synthetic Blackboard data for ${r.importedCourses} courses.`)}>Sync mock Blackboard</button>
-        {source.connected && <button className="danger-ghost" onClick={() => run(() => window.studentAssistant.disconnectSource(source.id), () => "Blackboard disconnected. Existing local data is now excluded from active views.")}>Disconnect</button>}
-      </div>
-      <div className="delete-zone">
-        <div><strong>Delete imported Blackboard data</strong><p>Removes normalized courses, assignments, announcements, and stored raw API objects from this prototype.</p></div>
-        <button className="danger" onClick={() => run(() => window.studentAssistant.deleteSourceData(source.id), () => "Imported Blackboard data deleted from the local database.")}>Delete local data</button>
-      </div>
+    <PageHeader eyebrow="Common data model" title="Course content"
+      text="One normalized collection of assignments, assessments, class sessions, resources, and policies. Each item keeps its source evidence and relationships."
+      actions={<button className="secondary" onClick={() => setPage("conflicts")}>Review conflicts</button>} />
+    <div className="content-toolbar"><label>Show <select value={kind} onChange={e => setKind(e.target.value)}>
+      {["all", "assignment", "assessment", "session", "resource", "policy", "announcement"].map(k =>
+        <option key={k} value={k}>{k}</option>)}
+    </select></label><span>{items.length} items</span></div>
+    <div className="content-grid">{items.length === 0 ?
+      <div className="panel">No course content yet. Import the Blackboard fixture or course website from Sources & consent.</div> :
+      items.map((item: any) => <div className="course-card" key={item.id}>
+        <div><span className="course-chip">{item.courseCode}</span><span className="pill">{item.kind}</span></div>
+        <h2>{item.title}</h2>
+        {Object.entries(item.fields as Record<string,string|null>).map(([field,value]) =>
+          <div className="content-field" key={field}><b>{field.replaceAll("_", " ")}</b>
+            <span>{value ? field === "date" ? value : field.endsWith("_at") ? fmtDate(value) : value :
+              <button className="link warning-text" onClick={() => setPage("conflicts")}>Conflicting values — review</button>}</span>
+          </div>)}
+        <p className="muted">Evidence: {item.claimCount} claim(s) · {item.sourceLabels.join(", ")}</p>
+        {item.related.length > 0 && <details><summary>Relationships ({item.related.length})</summary>
+          {item.related.map((rel: any, i: number) => <div className="related-row" key={i}>
+            <b>{rel.relationship}</b> {rel.title}</div>)}
+        </details>}
+      </div>)}
     </div>
   </>;
 }
@@ -225,7 +288,8 @@ function Sources({ snapshot, run }: any) {
 function Knowledge({ snapshot }: any) {
   const perCourse = useMemo(() => snapshot.courses.map((course: any) => ({
     course,
-    assignments: snapshot.assignments.filter((a: any) => a.courseId === course.id),
+    assignments: snapshot.assignments.filter((a: any) =>
+      a.courseCode.replace(/\s/g, "") === course.courseCode.replace(/\s/g, "")),
     announcements: snapshot.announcements.filter((a: any) => a.courseId === course.id)
   })), [snapshot]);
 
@@ -235,7 +299,7 @@ function Knowledge({ snapshot }: any) {
       {perCourse.length === 0 ? <Empty title="The model is empty" text="No connected source has contributed course information yet." /> : perCourse.map(({ course, assignments, announcements }: any) => <div className="course-card" key={course.id}>
         <span className="course-chip">{course.courseCode}</span><h2>{course.title}</h2><p>{course.description}</p>
         <div className="knowledge-facts"><span><b>{assignments.length}</b> assignments</span><span><b>{announcements.length}</b> announcements</span></div>
-        {assignments.slice(0, 3).map((a: any) => <div className="fact" key={a.id}><strong>{a.title}</strong><span>Due {fmtDate(a.dueAt)}</span><small>Source: Blackboard</small></div>)}
+        {assignments.slice(0, 3).map((a: any) => <div className="fact" key={a.id}><strong>{a.title}</strong><span>Due {fmtDate(a.dueAt)}</span><small>Source: {a.sourceLabels?.join(", ") ?? "Blackboard"}</small></div>)}
       </div>)}
     </div>
   </>;
@@ -292,12 +356,40 @@ function Empty({ title, text }: any) {
 }
 
 function SourceModal({ detail, onClose }: { detail: SourceDetail; onClose: () => void }) {
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-    <div className="modal-header"><div><div className="eyebrow">Provenance</div><h2>{detail.assignment.title}</h2></div><button className="close" onClick={onClose}>×</button></div>
-    <div className="provenance-grid"><span><b>Source</b>{detail.source.displayName}</span><span><b>Course</b>{detail.assignment.courseCode}</span><span><b>Blackboard object ID</b>{detail.assignment.externalId}</span><span><b>Retrieved</b>{fmtDate(detail.retrievedAt)}</span><span className="wide"><b>REST endpoint represented by this fixture</b><code>{detail.endpoint}</code></span></div>
-    <h3>Original API-shaped object</h3><pre>{JSON.stringify(detail.rawJson, null, 2)}</pre>
-    <p className="modal-note">The normalizer turned this source-specific Blackboard object into the common Assignment record used by the rest of the app.</p>
-  </div></div>;
+  const websiteClaims = detail.source.type === "website" && Array.isArray(detail.rawJson)
+    ? detail.rawJson as ContentClaim[] : null;
+
+  return <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-header">
+        <div><div className="eyebrow">Provenance</div><h2>{detail.assignment.title}</h2></div>
+        <button className="close" onClick={onClose}>×</button>
+      </div>
+      <div className="provenance-grid">
+        <span><b>Source</b>{detail.source.displayName}</span>
+        <span><b>Course</b>{detail.assignment.courseCode}</span>
+        <span><b>Retrieved</b>{fmtDate(detail.retrievedAt)}</span>
+        {!websiteClaims && <span><b>Blackboard object ID</b>{detail.assignment.externalId}</span>}
+        <span className="wide"><b>{websiteClaims ? "Course webpage" : "REST endpoint represented by this fixture"}</b>
+          <code>{detail.endpoint || "Not provided"}</code></span>
+      </div>
+      {websiteClaims ? <>
+        <h3>Original website evidence</h3>
+        {websiteClaims.map(claim => <div className="fact" key={claim.id}>
+          <strong>{claim.field.replaceAll("_", " ")}: {claim.value}</strong>
+          <span>{claim.sourceLabel}</span>
+          <small>Location: {claim.locator}</small>
+          <small>Website text: {claim.evidence}</small>
+          <small>Retrieved: {fmtDate(claim.observedAt)}</small>
+        </div>)}
+        <p className="modal-note">These are extracted facts with their supporting website text, not a copy of the entire HTML page. Conflicting dates can be reviewed under Conflicts & corrections.</p>
+      </> : <>
+        <h3>Original API-shaped object</h3>
+        <pre>{JSON.stringify(detail.rawJson, null, 2)}</pre>
+        <p className="modal-note">The normalizer turned the Blackboard object into the common Assignment record used by the rest of the app.</p>
+      </>}
+    </div>
+  </div>;
 }
 
 function EgressModal({ detail, onClose }: { detail: EgressSimulationResult; onClose: () => void }) {

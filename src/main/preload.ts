@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { ConsentUpdate, SettingUpdate } from "../shared/types";
+import { ChoiceUpdate, ConsentUpdate, SettingUpdate } from "../shared/types";
 
 contextBridge.exposeInMainWorld("studentAssistant", {
   getSnapshot: () => ipcRenderer.invoke("app:getSnapshot"),
@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("studentAssistant", {
   disconnectSource: (sourceId: string) => ipcRenderer.invoke("source:disconnect", sourceId),
   deleteSourceData: (sourceId: string) => ipcRenderer.invoke("source:deleteData", sourceId),
   syncMockBlackboard: () => ipcRenderer.invoke("blackboard:syncMock"),
+  importWebsite: (mode: "fixture" | "live") => ipcRenderer.invoke("website:import", mode),
+  resolveConflict: (choice: ChoiceUpdate) => ipcRenderer.invoke("conflicts:resolve", choice),
   getAssignmentSource: (assignmentId: string) => ipcRenderer.invoke("assignment:getSource", assignmentId),
   runHelpCheck: () => ipcRenderer.invoke("help:runCheck"),
   sendTestNotification: () => ipcRenderer.invoke("help:testNotification"),

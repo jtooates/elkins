@@ -1,6 +1,7 @@
 import fs from "fs";
 import { AppDatabase } from "./database";
 import { ConsentScope } from "../shared/types";
+import { canonicalCourseKey, canonicalItemId, claimId } from "./normalization";
 
 interface ApiResponseDump {
   generatedAt: string;
@@ -95,6 +96,27 @@ export class MockBlackboardConnector {
         for (const column of gradeColumns) {
           const rawRecordId = this.storeRaw(gradeEndpoint, "gradebook_column", column, retrievedAt);
           const content: any = column.contentId ? contentsById.get(column.contentId) : undefined;
+          const course = findResponse(dump, `/learn/api/public/v1/courses/${courseExternalId}`).body;
+          const courseCode = course.courseId ?? course.externalId ?? course.id;
+          const courseKey = canonicalCourseKey(courseCode, course.term?.name ?? null);
+          const itemId = canonicalItemId(courseKey, "assignment", column.name);
+          this.db.upsertCourseItem({ id: itemId, courseKey, courseCode,
+            courseTitle: course.name, kind: "assignment", title: column.name });
+          const description = stripHtml(content?.body ?? content?.description ?? column.description);
+          if (description) {
+            const locator = `gradebook:${courseExternalId}:${column.id}:description`;
+            this.db.upsertClaim({ id: claimId(itemId, SOURCE_ID, "description", locator),
+              itemId, sourceId: SOURCE_ID, field: "description", value: description,
+              locator, evidence: `Blackboard gradebook ${column.id}: ${column.name}`,
+              sourceUrl: null, observedAt: retrievedAt });
+          }
+          if (column.grading?.due) {
+            const locator = `gradebook:${courseExternalId}:${column.id}:due`;
+            this.db.upsertClaim({ id: claimId(itemId, SOURCE_ID, "due_at", locator),
+              itemId, sourceId: SOURCE_ID, field: "due_at", value: column.grading.due,
+              locator, evidence: `Blackboard grading.due for ${column.name}: ${column.grading.due}`,
+              sourceUrl: null, observedAt: retrievedAt });
+          }
           this.db.upsertAssignment({
             id: `${SOURCE_ID}:assignment:${courseExternalId}:${column.id}`,
             sourceId: SOURCE_ID,
