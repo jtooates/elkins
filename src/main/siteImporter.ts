@@ -13,7 +13,7 @@ const MONTHS: Record<string, number> = {
   jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
 };
 
-// This first adapter supports UMBC schedule tables. Adding another university
+// This first adapter supports UMBC schedule tables. Adding another university site*
 // means implementing another parser; the database model remains unchanged.
 function decode(value: string): string {
   return value.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp|ndash|mdash);/gi, (_, entity: string) => {
